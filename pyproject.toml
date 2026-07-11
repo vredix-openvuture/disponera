@@ -15,3 +15,6 @@ velorganize = "velorganize.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+velorganize = ["qml/**/*.qml"]
