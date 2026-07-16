@@ -6,6 +6,7 @@ import QtQuick
 Item {
     id: board
     property string filterProject: ""      // "" = all projects
+    signal openTask(var task)              // row-body click → task editor
 
     property bool showDone: false
     property var _folded: ({})
@@ -18,7 +19,11 @@ Item {
     }
     property string editDueFor: ""         // task id whose due chip is in edit mode
 
-    function subtasksOf(id) { return (Todo.tasks ?? []).filter(t => t.parentTaskId === id) }
+    // Todo.tasks marshals the whole (~400-row) list across the Python↔QML
+    // boundary on every read; pull it ONCE per model change and filter the local
+    // copy everywhere below instead of re-marshalling it per bucket/per row.
+    readonly property var _allTasks: Todo.tasks ?? []
+    function subtasksOf(id) { return board._allTasks.filter(t => t.parentTaskId === id) }
     function projectById(id) {
         var ps = Todo.projects ?? []
         for (var i = 0; i < ps.length; i++) if (ps[i].id === id) return ps[i]
@@ -30,7 +35,7 @@ Item {
     }
 
     readonly property real _day0: {
-        void Todo.tasks
+        void board._allTasks
         return new Date(new Date().setHours(0, 0, 0, 0)).getTime()
     }
     readonly property real _dayEnd: board._day0 + 86400000
@@ -39,10 +44,10 @@ Item {
         return (board.filterProject === "" || t.projectId === board.filterProject)
                && t.parentTaskId === ""
     }
-    readonly property var overdue:  (Todo.tasks ?? []).filter(t => board._mine(t) && !t.done && t.dueMs > 0 && t.dueMs <  board._day0)
-    readonly property var today:    (Todo.tasks ?? []).filter(t => board._mine(t) && !t.done && t.dueMs >= board._day0 && t.dueMs < board._dayEnd)
-    readonly property var upcoming: (Todo.tasks ?? []).filter(t => board._mine(t) && !t.done && (t.dueMs === 0 || t.dueMs >= board._dayEnd))
-    readonly property var done:     (Todo.tasks ?? []).filter(t => board._mine(t) && t.done).slice(0, 30)
+    readonly property var overdue:  board._allTasks.filter(t => board._mine(t) && !t.done && t.dueMs > 0 && t.dueMs <  board._day0)
+    readonly property var today:    board._allTasks.filter(t => board._mine(t) && !t.done && t.dueMs >= board._day0 && t.dueMs < board._dayEnd)
+    readonly property var upcoming: board._allTasks.filter(t => board._mine(t) && !t.done && (t.dueMs === 0 || t.dueMs >= board._dayEnd))
+    readonly property var done:     board._allTasks.filter(t => board._mine(t) && t.done).slice(0, 30)
     readonly property int  openTotal: overdue.length + today.length + upcoming.length
 
     readonly property string addTarget: {
@@ -107,6 +112,39 @@ Item {
         }
     }
 
+    // ── Recurring-completion toast ───────────────────────────────────────────
+    // Checking a recurring task doesn't stay checked — Vikunja resets it to
+    // open with an advanced due date instead. Without this the row just
+    // silently flickers back, which reads as a broken checkbox (user report).
+    // recurringCompleted only fires once the server has CONFIRMED the rollover.
+    property string toastText: ""
+    Connections {
+        target: Todo
+        function onRecurringCompleted(title, dueMs) {
+            board.toastText = "✓ " + title + "  ·  next: "
+                + Qt.formatDateTime(new Date(dueMs), "ddd, MMM d · hh:mm")
+            toastTimer.restart()
+        }
+    }
+    Timer { id: toastTimer; interval: 3000; onTriggered: board.toastText = "" }
+
+    Rectangle {
+        anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 14 }
+        z: 500
+        radius: 9; height: 34; width: toastLbl.implicitWidth + 28
+        color: Theme.bgElement
+        border.width: 1; border.color: Qt.alpha(Theme.accent, 0.4)
+        opacity: board.toastText !== "" ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Text {
+            id: toastLbl
+            anchors.centerIn: parent
+            text: board.toastText
+            color: Theme.fgPrimary; font.pixelSize: 13; font.family: Theme.fontFamily
+        }
+    }
+
     component TGroup: Column {
         id: tgroup
         property string title:  ""
@@ -156,6 +194,14 @@ Item {
         Behavior on color { ColorAnimation { duration: 90 } }
 
         readonly property int indent: row.sub ? 28 : 0
+
+        // Row body click → open the full task editor. Declared first so it sits
+        // BELOW the checkbox / due / delete controls, which keep their own clicks.
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: board.openTask(task.t)
+        }
 
         Text {
             visible: task.row.kids > 0

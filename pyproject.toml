@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "velorganize"
+name = "velora"
 version = "0.1.0"
 description = "Calendar + Todo + Quick-Notes — CalDAV-backed, markdown-first"
 readme = "README.md"
@@ -11,10 +11,10 @@ requires-python = ">=3.11"
 dependencies = ["PySide6>=6.6"]
 
 [project.scripts]
-velorganize = "velorganize.app:main"
+velora = "velora.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-velorganize = ["qml/**/*.qml"]
+velora = ["qml/**/*.qml"]

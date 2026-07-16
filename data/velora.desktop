@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=velorganize
+Name=velora
 GenericName=Calendar & Tasks
 Comment=Calendar + Todo + Quick-Notes — Vikunja/CalDAV-backed, follows the velumeron theme
-Exec=velorganize
+Exec=velora
 Icon=x-office-calendar
 Terminal=false
 Categories=Office;Calendar;ProjectManagement;
-StartupWMClass=velorganize
+StartupWMClass=velora

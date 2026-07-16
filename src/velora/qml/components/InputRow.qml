@@ -6,6 +6,7 @@ Rectangle {
     property string placeholder: ""
     signal submit(string text)
     function focusInput() { irInput.forceActiveFocus() }
+    function clear() { irInput.text = "" }
     height: 36
     radius: 8
     color:  Theme.bgElement
