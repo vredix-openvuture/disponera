@@ -1,4 +1,5 @@
 import QtQuick
+import Qt5Compat.GraphicalEffects
 import "components"
 
 // Calendar tab (M2). Toolbar (sidebar toggle · title+nav · view switcher) over a
@@ -14,7 +15,9 @@ Item {
     property int viewYear:  today.getFullYear()
     property int viewMonth: today.getMonth()   // 0-based
     property var selDay:    new Date()
-    property string calView: "week"           // year | month | week | day | agenda
+    // Initial view follows the Calendar setting; the binding breaks on the first
+    // manual view switch (the toolbar assigns calView), so it only sets the default.
+    property string calView: Settings.defaultView   // year | month | week | day | agenda
     // Immersive mode is owned by the window (one toggle hides the sidebar AND the
     // top bar). The sidebar follows it, but — like the top bar — peeks back when
     // the cursor touches the left edge (hover-to-show).
@@ -22,11 +25,12 @@ Item {
     readonly property bool sidebarOpen: !immersive
     readonly property bool sidebarPeek: !sidebarOpen && (sideHover.hovered || edgeHover.hovered)
     property real splitFrac: 0.6               // grid vs detail split (month/week)
-    property string colorEditCal: ""
 
-    readonly property var swatches: [
-        "#e06c75", "#e5a06a", "#e6cf6a", "#98c379", "#56b6c2",
-        "#61afef", "#a679e0", "#e079c0", "#8a97a8", "#c0c0c0"]
+    // A modal dialog is open → the whole calendar behind it goes non-interactive.
+    // A disabled item tree receives NO mouse/wheel/touch, which is the only
+    // reliable way to stop the background from scrolling when the dialog's own
+    // Flickable hits its bounds (a WheelHandler doesn't catch that leak).
+    readonly property bool modalOpen: eventDialog.open || calendarDialog.open
 
     // ── date helpers ─────────────────────────────────────────────────────────
     function dayKey(d)  { return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate() }
@@ -89,6 +93,29 @@ Item {
         var cs = pane.calendars
         for (var i = 0; i < cs.length; i++) if (cs[i].id === calId && cs[i].color) return cs[i].color
         return Theme.boActive
+    }
+    // Display name / description honour the local CalPrefs overrides.
+    function calName(calId) {
+        if (CalPrefs.names[calId]) return CalPrefs.names[calId]
+        var cs = pane.calendars
+        for (var i = 0; i < cs.length; i++) if (cs[i].id === calId) return cs[i].name || "calendar"
+        return "calendar"
+    }
+    function calDesc(calId) { return CalPrefs.descriptions[calId] || "" }
+
+    // Event calendars filed into groups for the sidebar: the ungrouped section
+    // ("") is emitted first, then each named group in first-seen order.
+    readonly property var calGroups: {
+        var cals = pane.displayCals, order = [], byGroup = {}
+        for (var i = 0; i < cals.length; i++) {
+            var g = (CalPrefs.groups[cals[i].id] || "").trim()
+            if (byGroup[g] === undefined) { byGroup[g] = []; order.push(g) }
+            byGroup[g].push(cals[i])
+        }
+        order.sort((a, b) => (a === "" ? -1 : b === "" ? 1 : 0))
+        var out = []
+        for (var j = 0; j < order.length; j++) out.push({ name: order[j], cals: byGroup[order[j]] })
+        return out
     }
     readonly property var eventCals: pane.calendars.filter(c => c.vevent && c.writable)
     readonly property string eventCal: pane.eventCals.length > 0 ? pane.eventCals[0].id : ""
@@ -177,6 +204,7 @@ Item {
     // where the sidebar ends instead of sitting above/behind it.
     Item {
         id: toolbar
+        enabled: !pane.modalOpen
         anchors { top: parent.top; left: sidebar.right; right: parent.right
                   topMargin: 12; leftMargin: 12; rightMargin: 12 }
         height: 34
@@ -237,6 +265,7 @@ Item {
 
     Rectangle {
         id: sidebar
+        enabled: !pane.modalOpen
         anchors { top: parent.top; left: parent.left; bottom: parent.bottom
                   topMargin: pane._topInset }
         width: (pane.sidebarOpen || pane.sidebarPeek) ? 236 : 0
@@ -270,77 +299,86 @@ Item {
                     text: "no event calendars"; wrapMode: Text.WordWrap
                     color: Theme.fgMuted; font.pixelSize: 13; font.family: Theme.fontFamily
                 }
+                // Grouped list: each named group gets a header; the ungrouped
+                // section renders without one.
                 Repeater {
-                    model: pane.displayCals
+                    model: pane.calGroups
                     delegate: Column {
-                        id: calEntry
                         required property var modelData
-                        readonly property string calId: calEntry.modelData.id
-                        readonly property bool hidden: pane.calHidden(calEntry.calId)
                         width: calCol.width
-                        Rectangle {
-                            width: parent.width; height: 38
-                            color: rowHov.containsMouse ? Theme.bgSecondary : "transparent"
-                            Behavior on color { ColorAnimation { duration: 90 } }
-                            Rectangle {
-                                id: dot
-                                anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
-                                width: 14; height: 14; radius: 7
-                                color: pane.calColor(calEntry.calId)
-                                opacity: calEntry.hidden ? 0.35 : 1.0
-                                border.width: pane.colorEditCal === calEntry.calId ? 2 : 0
-                                border.color: Theme.fgBright
-                                MouseArea { anchors.fill: parent; anchors.margins: -5
-                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                    onClicked: pane.colorEditCal = (pane.colorEditCal === calEntry.calId ? "" : calEntry.calId) }
-                            }
-                            Text {
-                                anchors { left: dot.right; leftMargin: 12; right: eye.left; rightMargin: 8
-                                          verticalCenter: parent.verticalCenter }
-                                elide: Text.ElideRight; text: calEntry.modelData.name || "calendar"
-                                color: calEntry.hidden ? Theme.fgMuted : Theme.fgPrimary
-                                font.pixelSize: 14; font.family: Theme.fontFamily
-                            }
-                            Text {
-                                id: eye
-                                anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
-                                text: calEntry.hidden ? "󰈉" : "󰈈"
-                                color: eyeHov.containsMouse ? Theme.fgBright
-                                     : calEntry.hidden ? Theme.fgMuted : Theme.fgPrimary
-                                font.pixelSize: 15; font.family: Theme.fontFamily
-                                MouseArea { id: eyeHov; anchors.fill: parent; anchors.margins: -6
-                                    hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                                    onClicked: CalPrefs.toggleHidden(calEntry.calId) }
-                            }
-                            MouseArea { id: rowHov; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+                        Text {
+                            visible: modelData.name !== ""
+                            anchors { left: parent.left; right: parent.right; leftMargin: 16; rightMargin: 16 }
+                            topPadding: 12; bottomPadding: 4
+                            text: modelData.name.toUpperCase(); elide: Text.ElideRight
+                            color: Theme.fgMuted; font.pixelSize: 11; font.bold: true
+                            font.letterSpacing: 0.8; font.family: Theme.fontFamily
                         }
-                        Item {
-                            width: parent.width
-                            height: pane.colorEditCal === calEntry.calId ? swatchFlow.implicitHeight + 14 : 0
-                            clip: true; visible: height > 0
-                            Behavior on height { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-                            Flow {
-                                id: swatchFlow
-                                anchors { left: parent.left; right: parent.right; top: parent.top
-                                          leftMargin: 42; rightMargin: 14; topMargin: 4 }
-                                spacing: 7
-                                Repeater {
-                                    model: pane.swatches
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        width: 20; height: 20; radius: 10; color: modelData
-                                        border.width: 2; border.color: Qt.alpha(Theme.fgBright, 0.15)
-                                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                            onClicked: { CalPrefs.setColor(calEntry.calId, modelData); pane.colorEditCal = "" } }
+                        Repeater {
+                            model: modelData.cals
+                            delegate: Rectangle {
+                                id: calEntry
+                                required property var modelData
+                                readonly property string calId: calEntry.modelData.id
+                                readonly property bool hidden: pane.calHidden(calEntry.calId)
+                                readonly property string desc: pane.calDesc(calEntry.calId)
+                                width: calCol.width
+                                height: calEntry.desc !== "" ? 50 : 38
+                                color: rowHH.hovered ? Theme.bgSecondary : "transparent"
+                                Behavior on color { ColorAnimation { duration: 90 } }
+                                // Row-level hover (visual) + background tap (open editor).
+                                // Handlers, not a covering MouseArea, so the icon
+                                // MouseAreas below still win their own clicks — a
+                                // top-most MouseArea would steal them (z-order).
+                                HoverHandler { id: rowHH; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: calendarDialog.openEdit(calEntry.calId) }
+                                Rectangle {
+                                    id: dot
+                                    anchors { left: parent.left; leftMargin: 16; verticalCenter: parent.verticalCenter }
+                                    width: 14; height: 14; radius: 7
+                                    color: pane.calColor(calEntry.calId)
+                                    opacity: calEntry.hidden ? 0.35 : 1.0
+                                }
+                                Column {
+                                    anchors { left: dot.right; leftMargin: 12; right: actions.left; rightMargin: 8
+                                              verticalCenter: parent.verticalCenter }
+                                    spacing: 1
+                                    Text {
+                                        width: parent.width; elide: Text.ElideRight
+                                        text: pane.calName(calEntry.calId)
+                                        color: calEntry.hidden ? Theme.fgMuted : Theme.fgPrimary
+                                        font.pixelSize: 14; font.family: Theme.fontFamily
+                                    }
+                                    Text {
+                                        visible: calEntry.desc !== ""
+                                        width: parent.width; elide: Text.ElideRight; text: calEntry.desc
+                                        color: Theme.fgMuted; font.pixelSize: 11; font.family: Theme.fontFamily
                                     }
                                 }
-                                Rectangle {
-                                    width: 20; height: 20; radius: 10; color: "transparent"
-                                    border.width: 1; border.color: Theme.fgMuted
-                                    Text { anchors.centerIn: parent; text: "󰜺"; color: Theme.fgMuted
-                                           font.pixelSize: 12; font.family: Theme.fontFamily }
-                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                        onClicked: { CalPrefs.setColor(calEntry.calId, ""); pane.colorEditCal = "" } }
+                                Row {
+                                    id: actions
+                                    anchors { right: parent.right; rightMargin: 14; verticalCenter: parent.verticalCenter }
+                                    spacing: 6
+                                    Text {   // edit — opens the full calendar editor
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "󰏫"; opacity: (rowHH.hovered || editHov.containsMouse) ? 1.0 : 0.0
+                                        color: editHov.containsMouse ? Theme.fgBright : Theme.fgMuted
+                                        font.pixelSize: 15; font.family: Theme.fontFamily
+                                        Behavior on opacity { NumberAnimation { duration: 90 } }
+                                        MouseArea { id: editHov; anchors.fill: parent; anchors.margins: -6
+                                            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: calendarDialog.openEdit(calEntry.calId) }
+                                    }
+                                    Text {   // visibility toggle
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: calEntry.hidden ? "󰈉" : "󰈈"
+                                        color: eyeHov.containsMouse ? Theme.fgBright
+                                             : calEntry.hidden ? Theme.fgMuted : Theme.fgPrimary
+                                        font.pixelSize: 15; font.family: Theme.fontFamily
+                                        MouseArea { id: eyeHov; anchors.fill: parent; anchors.margins: -6
+                                            hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                            onClicked: CalPrefs.toggleHidden(calEntry.calId) }
+                                    }
                                 }
                             }
                         }
@@ -353,6 +391,7 @@ Item {
     // ── Content area ─────────────────────────────────────────────────────────
     Item {
         id: content
+        enabled: !pane.modalOpen
         anchors { top: toolbar.bottom; left: sidebar.right; right: parent.right
                   bottom: parent.bottom; topMargin: 10; leftMargin: 16; rightMargin: 16; bottomMargin: 14 }
 
@@ -460,6 +499,7 @@ Item {
     // ── Big add button (opens the Termin/Task dialog for the selected day) ────
     Rectangle {
         id: fab
+        enabled: !pane.modalOpen
         anchors { right: parent.right; bottom: parent.bottom; margins: 20 }
         width: 56; height: 56; radius: 28
         color: fabHov.containsMouse ? Theme.bgHover : Theme.accent
@@ -473,6 +513,7 @@ Item {
     }
 
     EventDialog { id: eventDialog; anchors.fill: parent }
+    CalendarDialog { id: calendarDialog; anchors.fill: parent }
 
     // ── Day cell (month grid) ────────────────────────────────────────────────
     component DayCell: Rectangle {
@@ -599,7 +640,21 @@ Item {
         property var days: []                  // 1 (day) or 7 (week) dates
         readonly property int hourH: 56
         readonly property int gutterW: 46
+        // Visible hour window (Settings › Calendar › Day grid). Clamped so the
+        // range is always non-empty even if the stored prefs are odd.
+        readonly property int startHour: Math.max(0, Math.min(23, Settings.dayStartHour))
+        readonly property int endHour: Math.max(grid.startHour + 1, Math.min(24, Settings.dayEndHour))
+        readonly property int hours: grid.endHour - grid.startHour
         readonly property real dayW: (grid.width - grid.gutterW) / Math.max(1, grid.days.length)
+        // Event blocks sit inset from BOTH column edges by evPad so they never
+        // ride over the day-separator line. The separator is a sepW-wide bar at
+        // x:0 of each interior column, so on those columns the block is pushed a
+        // further sepW to the right — otherwise the line eats the left gap and
+        // the block looks tighter on the left than on the right (user feedback).
+        // laneGap is the air between two side-by-side (overlapping) events.
+        readonly property int evPad: 5
+        readonly property int laneGap: 3
+        readonly property int sepW: 2
 
         // Greedy lane-packing: events that overlap in time sit side by side
         // instead of stacking on top of each other.
@@ -622,7 +677,7 @@ Item {
             var lanes = laneEnd.length || 1
             return placed.map(p => ({
                 ev: p.it.ev,
-                y: (p.it.start - dayStart) / 60000 / 60 * grid.hourH,
+                y: ((p.it.start - dayStart) / 60000 / 60 - grid.startHour) * grid.hourH,
                 height: Math.max(20, (p.it.end - p.it.start) / 60000 / 60 * grid.hourH),
                 laneX: p.lane / lanes,
                 laneW: 1 / lanes,
@@ -652,7 +707,10 @@ Item {
                         model: pane.eventsOn(modelData).filter(e => e.allDay)
                         delegate: Rectangle {
                             required property var modelData
-                            width: parent.width - 4; height: 16; radius: 4
+                            // inset evenly from both edges so the bar clears the
+                            // day-separator lines (matches the timed blocks)
+                            x: grid.evPad; width: grid.dayW - 2 * grid.evPad
+                            height: 16; radius: 4
                             color: Qt.alpha(pane.calColor(modelData.cal), 0.5)
                             Text { anchors { left: parent.left; right: parent.right; leftMargin: 5; rightMargin: 4
                                              verticalCenter: parent.verticalCenter }
@@ -692,29 +750,30 @@ Item {
             id: flick
             anchors { top: dayHeader.visible ? dayHeader.bottom : (allDayRow.visible ? allDayRow.bottom : parent.top)
                       left: parent.left; right: parent.right; bottom: parent.bottom; topMargin: 4 }
-            contentHeight: grid.hourH * 24
+            contentHeight: grid.hourH * grid.hours
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             Component.onCompleted: {
                 // Land with "now" in view (a couple hours of lead-in above it)
-                // instead of always opening at 07:00 — the whole point of the
+                // instead of always opening at the top — the whole point of the
                 // now-line is that it's visible without having to scroll first.
                 var n = new Date()
                 var nowMin = n.getHours() * 60 + n.getMinutes()
-                contentY = Math.max(0, (nowMin - 120) / 60 * grid.hourH)
+                contentY = Math.max(0, (nowMin / 60 - grid.startHour - 2) * grid.hourH)
             }
 
             Column {   // hour gutter labels, aligned to each hour's gridline
                 x: 0; width: grid.gutterW
                 Repeater {
-                    model: 24
+                    model: grid.hours
                     delegate: Item {
                         required property int index
+                        readonly property int hh: index + grid.startHour
                         width: grid.gutterW; height: grid.hourH
                         Text {
                             visible: index > 0
                             anchors { top: parent.top; right: parent.right; rightMargin: 6; topMargin: -7 }
-                            text: (index < 10 ? "0" : "") + index + ":00"
+                            text: (hh < 10 ? "0" : "") + hh + ":00"
                             color: Theme.fgMuted; font.pixelSize: 10; font.family: Theme.fontFamily
                         }
                     }
@@ -729,21 +788,21 @@ Item {
                         id: dayCol
                         required property var modelData
                         required property int index
-                        width: grid.dayW; height: grid.hourH * 24
+                        width: grid.dayW; height: grid.hourH * grid.hours
 
                         Repeater {          // hour gridlines
-                            model: 24
+                            model: grid.hours
                             delegate: Rectangle {
                                 required property int index
                                 y: index * grid.hourH; width: dayCol.width; height: 1
-                                color: Qt.alpha(Theme.boNormal, index % 6 === 0 ? 0.45 : 0.22)
+                                color: Qt.alpha(Theme.boNormal, (index + grid.startHour) % 6 === 0 ? 0.45 : 0.22)
                             }
                         }
                         Rectangle {         // day separator — stronger than the hour
                             // gridlines so columns read as distinct days at a
                             // glance instead of blurring together (user feedback)
                             visible: dayCol.index > 0
-                            x: 0; width: 2; height: parent.height
+                            x: 0; width: grid.sepW; height: parent.height
                             color: Qt.alpha(Theme.boNormal, 0.85)
                         }
 
@@ -761,45 +820,126 @@ Item {
                         Repeater {
                             model: grid.layout(dayCol.modelData)
                             delegate: Rectangle {
+                                id: evBlock
                                 required property var modelData
-                                x: modelData.laneX * dayCol.width + 2
+                                readonly property bool hasImg: Settings.showEventImages && (modelData.ev.image || "") !== ""
+                                // Only treat as an image block once the picture actually
+                                // LOADS — a stale/missing path (e.g. an old cache file from
+                                // a previous name) must not suppress the past-fade or draw a
+                                // frame for a picture that never shows.
+                                readonly property bool imgOk: evBlock.hasImg && evImg.status === Image.Ready
+                                readonly property bool isPast: { void nowTick.tick
+                                                                 return modelData.ev.endMs < Date.now() }
+                                // clear the interior column's separator so the gap
+                                // to the line matches on both sides (see evPad note)
+                                readonly property int leftSep: dayCol.index > 0 ? grid.sepW : 0
+                                readonly property real usable: dayCol.width - leftSep - 2 * grid.evPad
+                                x: leftSep + grid.evPad + modelData.laneX * usable
                                 y: modelData.y
                                 z: 2
-                                width: modelData.laneW * dayCol.width - 4
+                                // even inset on both column edges; a lane gap only
+                                // between neighbours, never hanging off either edge
+                                width: modelData.laneW * usable
+                                       - (modelData.laneX + modelData.laneW < 0.999 ? grid.laneGap : 0)
                                 height: modelData.height
                                 radius: 5; clip: true
-                                // Solid fill (matches the month view's blocks) —
-                                // the item's own `opacity` below is now the ONLY
-                                // transparency, so "full opacity" for upcoming
-                                // events actually reads as solid, not tinted.
-                                color: pane.calColor(modelData.ev.cal)
+                                // No calendar-colour fill BEHIND a picture: opacity is
+                                // applied per-item (not as a group), so a faded image
+                                // goes semi-transparent and the fill would bleed through
+                                // and tint it. The image's calendar identity comes from
+                                // the frame instead. Non-image blocks keep the fill.
+                                color: evBlock.imgOk ? "transparent" : pane.calColor(modelData.ev.cal)
                                 border.width: 1; border.color: Qt.darker(pane.calColor(modelData.ev.cal), 1.3)
-                                // Past events fade — upcoming ones stay at full
-                                // opacity (user feedback). Strength is a Settings
-                                // knob (Calendar section); nowTick keeps this
-                                // live as events cross into the past.
-                                opacity: { void nowTick.tick
-                                           return modelData.ev.endMs < Date.now() ? Settings.pastEventOpacity : 1.0 }
+                                // Past events fade — image blocks included. Safe now
+                                // that the picture is always rounded via the OpacityMask
+                                // (group opacity no longer changes the corners), so a
+                                // faded image block still reads as the same shape.
+                                opacity: evBlock.isPast ? Settings.pastEventOpacity : 1.0
                                 Behavior on opacity { NumberAnimation { duration: 300 } }
+                                // Event picture (Settings › Calendar › Event images in
+                                // Week/Day), rounded to the block corners with an
+                                // OpacityMask — clip alone stays rectangular, which is
+                                // why the un-faded block had sharp corners. A top scrim
+                                // keeps the title readable.
+                                Item {
+                                    id: evImgGroup
+                                    visible: evBlock.hasImg     // keep mounted so the Image loads (→ imgOk)
+                                    anchors.fill: parent
+                                    layer.enabled: evBlock.imgOk
+                                    layer.effect: OpacityMask {
+                                        maskSource: Rectangle { width: evImgGroup.width; height: evImgGroup.height
+                                                                radius: evBlock.radius }
+                                    }
+                                    Image {
+                                        id: evImg
+                                        anchors.fill: parent
+                                        source: evBlock.hasImg ? "file://" + evBlock.modelData.ev.image : ""
+                                        fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: true
+                                    }
+                                    Rectangle {
+                                        visible: evBlock.imgOk
+                                        anchors.fill: parent
+                                        gradient: Gradient {
+                                            GradientStop { position: 0.0; color: Qt.rgba(0, 0, 0, 0.58) }
+                                            GradientStop { position: 0.6; color: Qt.rgba(0, 0, 0, 0.16) }
+                                            GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.05) }
+                                        }
+                                    }
+                                }
+                                // The image covers the block's own border, so draw a
+                                // calendar-colour frame on top → an image block still
+                                // reads as belonging to its calendar. Only when the
+                                // image actually loaded.
+                                Rectangle {
+                                    visible: evBlock.imgOk
+                                    anchors.fill: parent
+                                    color: "transparent"
+                                    radius: evBlock.radius
+                                    border.width: 2
+                                    border.color: pane.calColor(evBlock.modelData.ev.cal)
+                                }
                                 Column {
-                                    anchors { fill: parent; margins: 4 }
-                                    spacing: 0
-                                    Text {
-                                        width: parent.width; elide: Text.ElideRight
-                                        text: modelData.ev.summary ?? ""
-                                        // White, not Theme — matches the month view's
-                                        // blocks (also solid calColor fill); a
-                                        // theme fg can't guarantee contrast against
-                                        // an arbitrary, possibly light, cal colour.
-                                        color: "#ffffff"; font.pixelSize: 11; font.bold: true
-                                        font.family: Theme.fontFamily
+                                    anchors { fill: parent; margins: 5 }
+                                    spacing: 1
+                                    // Title line: event icon (left) · summary · recurring glyph (right).
+                                    Item {
+                                        width: parent.width; height: titleT.implicitHeight
+                                        Text {
+                                            id: recurT
+                                            visible: modelData.ev.recurring === true
+                                            anchors { right: parent.right; verticalCenter: titleT.verticalCenter }
+                                            text: "󰑖"; color: Qt.alpha("#ffffff", 0.9)
+                                            font.pixelSize: 15; font.family: Theme.fontFamily
+                                        }
+                                        Text {
+                                            id: iconT
+                                            visible: (modelData.ev.icon || "") !== ""
+                                            anchors { left: parent.left; verticalCenter: titleT.verticalCenter }
+                                            text: modelData.ev.icon || ""
+                                            font.pixelSize: 16; font.family: Theme.fontFamily
+                                        }
+                                        Text {
+                                            id: titleT
+                                            anchors { left: iconT.visible ? iconT.right : parent.left
+                                                      leftMargin: iconT.visible ? 4 : 0
+                                                      right: recurT.visible ? recurT.left : parent.right
+                                                      rightMargin: recurT.visible ? 4 : 0 }
+                                            elide: Text.ElideRight
+                                            text: modelData.ev.summary ?? ""
+                                            // White, not Theme — matches the month view's
+                                            // blocks (also solid calColor fill); a
+                                            // theme fg can't guarantee contrast against
+                                            // an arbitrary, possibly light, cal colour.
+                                            color: "#ffffff"; font.pixelSize: 15; font.bold: true
+                                            font.family: Theme.fontFamily
+                                        }
                                     }
                                     Text {
                                         width: parent.width; elide: Text.ElideRight
-                                        visible: modelData.height > 32
-                                        text: Qt.formatTime(new Date(modelData.ev.startMs), "hh:mm") + "–"
-                                              + Qt.formatTime(new Date(modelData.ev.endMs), "hh:mm")
-                                        color: Qt.alpha("#ffffff", 0.85); font.pixelSize: 10; font.family: Theme.fontFamily
+                                        visible: modelData.height > 46
+                                        text: Qt.formatTime(new Date(modelData.ev.startMs), Settings.timeFmt) + "–"
+                                              + Qt.formatTime(new Date(modelData.ev.endMs), Settings.timeFmt)
+                                        color: Qt.alpha("#ffffff", 0.9); font.pixelSize: 13; font.family: Theme.fontFamily
                                     }
                                 }
                                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
@@ -807,8 +947,13 @@ Item {
                             }
                         }
 
-                        // "Now" indicator — today's column only.
-                        Rectangle {
+                        // "Now" indicator — today's column only. A dark casing
+                        // under the bright core keeps it readable over BOTH the
+                        // dark grid AND arbitrarily-coloured event blocks: a
+                        // single hue (fgUrgent) can blend into a same-hue block
+                        // (e.g. the pink line over a purple event), so the dark
+                        // outline is what guarantees separation everywhere.
+                        Item {
                             id: nowLine
                             visible: pane.dayKey(dayCol.modelData) === pane.dayKey(pane.today)
                             readonly property real nowMin: {
@@ -816,9 +961,24 @@ Item {
                                 var n = new Date()
                                 return n.getHours() * 60 + n.getMinutes()
                             }
-                            y: nowLine.nowMin / 60 * grid.hourH
-                            width: parent.width; height: 2; color: Theme.fgUrgent; z: 50
-                            Rectangle { x: -4; y: -3; width: 8; height: 8; radius: 4; color: Theme.fgUrgent }
+                            x: 0; width: parent.width; height: 10; z: 50
+                            y: (nowLine.nowMin / 60 - grid.startHour) * grid.hourH - height / 2
+                            Rectangle {   // dark casing — separates from any bg hue
+                                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
+                                height: 6; radius: 3; color: Qt.rgba(0, 0, 0, 0.65)
+                            }
+                            Rectangle {   // bright near-white core — high luminance
+                                anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
+                                // fgBright (≈white) beats fgUrgent here: luminance,
+                                // not hue, is what contrasts against BOTH the dark
+                                // grid and a same-hue coloured block.
+                                height: 3; color: Theme.fgBright
+                            }
+                            Rectangle {   // colored "now" handle dot with a dark ring
+                                anchors.verticalCenter: parent.verticalCenter; x: -6
+                                width: 13; height: 13; radius: 6.5; color: Theme.fgUrgent
+                                border.width: 2; border.color: Qt.rgba(0, 0, 0, 0.65)
+                            }
                         }
                     }
                 }
@@ -934,7 +1094,7 @@ Item {
                    text: (ev.icon ? ev.icon + " " : "") + (ev.summary ?? "") + (ev.recurring ? "  󰑖" : "")
                    color: Theme.fgPrimary; font.pixelSize: 15; font.family: Theme.fontFamily }
             Text { width: parent.width; elide: Text.ElideRight
-                   text: (ev.allDay ? "all day" : Qt.formatTime(new Date(ev.startMs), "hh:mm") + " – " + Qt.formatTime(new Date(ev.endMs), "hh:mm"))
+                   text: (ev.allDay ? "all day" : Qt.formatTime(new Date(ev.startMs), Settings.timeFmt) + " – " + Qt.formatTime(new Date(ev.endMs), Settings.timeFmt))
                          + (ev.location ? "   󰍎 " + ev.location : "")
                    color: Theme.fgMuted; font.pixelSize: 12; font.family: Theme.fontFamily }
         }

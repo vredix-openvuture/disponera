@@ -1,14 +1,15 @@
-"""velora — QML application entry point."""
+"""Disponera — QML application entry point."""
 
 import importlib.resources
 import os
 import sys
 
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 
 from .caldav import CalDavBridge
 from .local import LocalStore
+from .mdhighlight import MarkdownHighlighter
 from .notes import NotesStore
 from .settings import AppSettings, CalPrefs
 from .theme import ThemeBridge
@@ -18,10 +19,13 @@ from .todomodel import TodoBridge
 def main() -> int:
     os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
     app = QGuiApplication(sys.argv)
-    app.setApplicationName("velora")
-    app.setApplicationDisplayName("velora")
+    app.setApplicationName("disponera")
+    app.setApplicationDisplayName("Disponera")
     # Wayland app_id — hypr window rules and the .desktop StartupWMClass match on this.
-    app.setDesktopFileName("velora")
+    app.setDesktopFileName("disponera")
+
+    # Live-markdown TextEdit highlighter — used by MarkdownField.qml.
+    qmlRegisterType(MarkdownHighlighter, "Disponera", 1, 0, "MarkdownHighlighter")
 
     engine = QQmlApplicationEngine()
     settings = AppSettings()
@@ -46,7 +50,7 @@ def main() -> int:
 
     # qml/ ships inside the package (pyproject package-data), so the installed
     # wheel finds it — not just a source-tree checkout.
-    qml_dir = importlib.resources.files("velora") / "qml"
+    qml_dir = importlib.resources.files("disponera") / "qml"
     engine.load(str(qml_dir / "Main.qml"))
     if not engine.rootObjects():
         return 1

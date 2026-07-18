@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 
 // Task detail / editor (blueprint #8): full editing of a Vikunja task — title,
 // description, priority, due date, project (move), labels, and subtasks. A real
@@ -11,6 +12,7 @@ Item {
     property string selDue: ""
     property string selProject: ""
     property var selLabelIds: []
+    property string _pendingLabel: ""       // label being created via Enter (attach on arrival)
     property bool confirmDelete: false
     visible: open
     z: 500
@@ -40,11 +42,46 @@ Item {
             .replace(/\n{3,}/g, "\n\n").trim()
     }
     function _hasLabel(id) { return dlg.selLabelIds.indexOf(id) >= 0 }
-    function _toggleLabel(id) {
+    function _labelById(id) {
+        var all = Todo.labels ?? []
+        for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i]
+        return null
+    }
+    function _attachLabel(id) {
+        if (dlg._hasLabel(id)) return
+        var out = dlg.selLabelIds.slice(); out.push(id); dlg.selLabelIds = out
+    }
+    function _removeLabel(id) {
         var out = dlg.selLabelIds.slice()
-        var i = out.indexOf(id)
-        if (i >= 0) out.splice(i, 1); else out.push(id)
+        var i = out.indexOf(id); if (i >= 0) out.splice(i, 1)
         dlg.selLabelIds = out
+    }
+    // Unattached labels whose title contains the query; when the query matches no
+    // existing label, a trailing { create:true } entry lets Enter make a new one.
+    function _labelSuggestions(query) {
+        var q = (query || "").trim().toLowerCase()
+        var all = Todo.labels ?? [], out = [], exact = false
+        for (var i = 0; i < all.length; i++) {
+            var l = all[i], t = (l.title || "").toLowerCase()
+            if (t === q) exact = true
+            if (dlg._hasLabel(l.id)) continue
+            if (q === "" || t.indexOf(q) >= 0)
+                out.push({ create: false, id: l.id, title: l.title, color: l.color || "" })
+        }
+        if (q !== "" && !exact)
+            out.push({ create: true, id: -1, title: (query || "").trim(), color: "" })
+        return out
+    }
+    // Add the chosen suggestion (or, with none passed, the top one) on Enter.
+    function _commitLabel(entry) {
+        if (!entry) {
+            var s = dlg._labelSuggestions(labelInput.text)
+            if (s.length === 0) return
+            entry = s[0]
+        }
+        if (entry.create) { dlg._pendingLabel = entry.title; Todo.addLabel(entry.title, "") }
+        else dlg._attachLabel(entry.id)
+        labelInput.text = ""
     }
 
     function openEdit(task) {
@@ -73,6 +110,20 @@ Item {
         if (JSON.stringify(orig) !== JSON.stringify(cur))
             Todo.setLabels(dlg.task, dlg.selLabelIds)
         dlg.open = false
+    }
+
+    // A label created via Enter lands asynchronously (a subprocess round-trip);
+    // attach it by title once Todo.labels carries the new id.
+    Connections {
+        target: Todo
+        function onModelChanged() {
+            if (dlg._pendingLabel === "") return
+            var all = Todo.labels ?? [], want = dlg._pendingLabel.toLowerCase()
+            for (var i = 0; i < all.length; i++)
+                if ((all[i].title || "").toLowerCase() === want) {
+                    dlg._attachLabel(all[i].id); dlg._pendingLabel = ""; return
+                }
+        }
     }
 
     Rectangle {
@@ -131,28 +182,97 @@ Item {
                              placeholder: "project"; onPicked: k => dlg.selProject = k }
                 }
 
-                // Labels — toggle chips (filled = attached).
+                // Labels — attached chips (removable) + a single-line typeahead:
+                // type to filter, Enter (or click a suggestion) adds the tag.
                 Column {
                     width: parent.width; spacing: 6
-                    visible: (Todo.labels ?? []).length > 0 || dlg.selLabelIds.length > 0
+                    visible: dlg.isVk
                     Text { text: "Labels"; color: Theme.fgMuted; font.pixelSize: 12; font.family: Theme.fontFamily }
+
                     Flow {
                         width: parent.width; spacing: 6
+                        visible: dlg.selLabelIds.length > 0
                         Repeater {
-                            model: Todo.labels ?? []
+                            model: dlg.selLabelIds
                             delegate: Rectangle {
                                 required property var modelData
-                                readonly property bool on: dlg._hasLabel(modelData.id)
-                                readonly property color chip: (modelData.color && modelData.color !== "") ? modelData.color : Theme.accent
-                                height: 28; radius: 14
-                                width: lblTxt.implicitWidth + 28
-                                color: on ? chip : Qt.alpha(chip, 0.14)
-                                border.width: on ? 0 : 1; border.color: Qt.alpha(chip, 0.6)
-                                Text { id: lblTxt; anchors.centerIn: parent; text: modelData.title
-                                       color: on ? "#ffffff" : Theme.fgPrimary
-                                       font.pixelSize: 12; font.bold: on; font.family: Theme.fontFamily }
-                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                            onClicked: dlg._toggleLabel(modelData.id) }
+                                readonly property var lbl: dlg._labelById(modelData)
+                                readonly property color chip: (lbl && lbl.color && lbl.color !== "") ? lbl.color : Theme.accent
+                                height: 28; radius: 14; width: chipRow.implicitWidth + 22; color: chip
+                                Row {
+                                    id: chipRow; anchors.centerIn: parent; spacing: 6
+                                    Text { anchors.verticalCenter: parent.verticalCenter
+                                           text: lbl ? lbl.title : "?"; color: "#ffffff"
+                                           font.pixelSize: 12; font.bold: true; font.family: Theme.fontFamily }
+                                    Text { anchors.verticalCenter: parent.verticalCenter; text: "󰅖"; color: "#ffffff"
+                                           font.pixelSize: 12; font.family: Theme.fontFamily
+                                           MouseArea { anchors.fill: parent; anchors.margins: -5
+                                                       cursorShape: Qt.PointingHandCursor
+                                                       onClicked: dlg._removeLabel(modelData) } }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        id: labelBox
+                        width: parent.width; height: 36; radius: 8; color: Theme.bgPrimary
+                        border.width: labelInput.activeFocus ? 1 : 0; border.color: Theme.accent
+                        TextInput {
+                            id: labelInput
+                            anchors { left: parent.left; leftMargin: 12; right: parent.right; rightMargin: 12
+                                      verticalCenter: parent.verticalCenter }
+                            color: Theme.fgBright; font.pixelSize: 14; font.family: Theme.fontFamily
+                            clip: true; selectByMouse: true
+                            Keys.onReturnPressed: dlg._commitLabel(null)
+                            Keys.onEnterPressed: dlg._commitLabel(null)
+                        }
+                        Text {
+                            anchors { left: parent.left; leftMargin: 12; verticalCenter: parent.verticalCenter }
+                            visible: labelInput.text === "" && !labelInput.activeFocus
+                            text: "add a label…"; color: Theme.fgMuted; font.pixelSize: 13; font.family: Theme.fontFamily
+                        }
+
+                        // Suggestions — filtered existing labels (+ a Create row).
+                        Popup {
+                            id: labelPop
+                            y: labelBox.height + 4; width: labelBox.width; padding: 4
+                            visible: labelInput.activeFocus && dlg._labelSuggestions(labelInput.text).length > 0
+                            closePolicy: Popup.NoAutoClose
+                            implicitHeight: Math.min(212, sugFlick.contentHeight + 8)
+                            background: Rectangle { radius: 8; color: Theme.surface
+                                                    border.width: 1; border.color: Qt.alpha(Theme.boNormal, 0.6) }
+                            contentItem: Flickable {
+                                id: sugFlick
+                                contentHeight: sugCol.implicitHeight; clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                Column {
+                                    id: sugCol; width: parent.width; spacing: 2
+                                    Repeater {
+                                        model: dlg._labelSuggestions(labelInput.text)
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            required property int index
+                                            width: sugCol.width; height: 30; radius: 6
+                                            color: sHov.containsMouse || index === 0 ? Theme.bgSecondary : "transparent"
+                                            Row {
+                                                anchors { left: parent.left; leftMargin: 8; right: parent.right; rightMargin: 8
+                                                          verticalCenter: parent.verticalCenter }
+                                                spacing: 8
+                                                Rectangle { visible: !modelData.create; anchors.verticalCenter: parent.verticalCenter
+                                                            width: 11; height: 11; radius: 6
+                                                            color: (modelData.color && modelData.color !== "") ? modelData.color : Theme.accent }
+                                                Text { anchors.verticalCenter: parent.verticalCenter
+                                                       text: modelData.create ? ("Create “" + modelData.title + "”") : modelData.title
+                                                       color: modelData.create ? Theme.accent : Theme.fgPrimary
+                                                       font.pixelSize: 13; font.family: Theme.fontFamily }
+                                            }
+                                            MouseArea { id: sHov; anchors.fill: parent; hoverEnabled: true
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: dlg._commitLabel(modelData) }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

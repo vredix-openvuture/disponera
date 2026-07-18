@@ -1,6 +1,6 @@
 """Markdown quick-notes store — flat .md files with [[wikilinks]].
 
-Notes live in $XDG_DATA_HOME/velora/notes as plain files so they stay
+Notes live in $XDG_DATA_HOME/disponera/notes as plain files so they stay
 greppable/syncable and any editor (or Obsidian itself) can open the folder.
 """
 
@@ -16,7 +16,7 @@ _WIKILINK = re.compile(r"\[\[([^\]]+)\]\]")
 
 def notes_dir() -> Path:
     base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local/share")
-    d = Path(base) / "velora" / "notes"
+    d = Path(base) / "disponera" / "notes"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

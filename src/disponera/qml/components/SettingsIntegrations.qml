@@ -26,8 +26,7 @@ Flickable {
         width: parent.width
         spacing: 16
 
-        Text { text: "CalDAV connections"; color: Theme.fgBright
-               font.pixelSize: 17; font.bold: true; font.family: Theme.fontFamily }
+        SectionLabel { text: "CALDAV CONNECTIONS" }
 
         Text {
             visible: (CalDav.accounts ?? []).length === 0
@@ -214,8 +213,7 @@ Flickable {
 
         // ── ICS subscriptions (read-only calendar feeds) ─────────────────────
         Item { width: parent.width; height: 6 }
-        Text { text: "Subscribed calendars (ICS)"; color: Theme.fgBright
-               font.pixelSize: 17; font.bold: true; font.family: Theme.fontFamily }
+        SectionLabel { text: "SUBSCRIBED CALENDARS (ICS)" }
         Text {
             width: parent.width; wrapMode: Text.WordWrap
             text: "Read-only .ics feeds (holidays, shared calendars, …). Fetched and shown in the Calendar tab."

@@ -90,7 +90,7 @@ class ThemeBridge(QObject):
         self._font: str = _DEFAULT_FONT
         self._colorful: bool = False   # gui/settings.json colorful_enabled + colorful_menus
 
-        # velora's own theme choice: "auto" follows wallust, anything else
+        # Disponera's own theme choice: "auto" follows wallust, anything else
         # pins a palette from THEMES. Reload whenever that choice changes.
         self._settings = settings
         self._mode: str = settings.theme if settings is not None else "auto"

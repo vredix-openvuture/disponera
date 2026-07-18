@@ -2,7 +2,7 @@
 CalDAV server (blueprint #7), plus the two Integrations extras that are pure
 local metadata (blueprint #6): per-CalDAV-account role and ICS subscriptions.
 
-Everything persists to $XDG_CONFIG_HOME/velora/local.json. The store shapes
+Everything persists to $XDG_CONFIG_HOME/disponera/local.json. The store shapes
 its lists/todos/events to the SAME dicts the Vikunja/CalDAV bridges emit, so the
 Todo model and the calendar can union them in with a `loc:`/`ics:` id prefix and
 otherwise treat them identically.
@@ -27,7 +27,7 @@ from PySide6.QtCore import Property, QObject, Signal, Slot
 
 def _config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    d = Path(base) / "velora"
+    d = Path(base) / "disponera"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -102,7 +102,14 @@ class LocalStore(QObject):
     """QML context property `Local` — local lists/items + ICS subs + roles."""
 
     changed = Signal()          # lists / items / roles mutated
-    icsChanged = Signal()       # fetched ICS events updated (off-thread)
+    # Any change that alters the shaped `events` list — a local item mutation
+    # (_save) OR a background ICS refetch. `events` MUST be notified by this and
+    # not by `changed` alone: a QML property can bind to only one NOTIFY signal,
+    # and if `events` listened to `icsChanged` only (the old bug), creating or
+    # editing a local event — which emits `changed` — never refreshed the
+    # calendar until some unrelated icsChanged/CalDav sync fired ("save does
+    # nothing" / "new event takes forever to show").
+    eventsChanged = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -131,6 +138,9 @@ class LocalStore(QObject):
             json.dump(self._data, f, indent=2)
         os.replace(tmp, self._path)
         self.changed.emit()
+        # A local item change also changes the shaped events list — fire the
+        # events notification so calendar bindings recompute immediately.
+        self.eventsChanged.emit()
 
     def _list(self, list_id: str):
         return next((l for l in self._data["lists"] if l["id"] == list_id), None)
@@ -190,7 +200,7 @@ class LocalStore(QObject):
                         "writable": False, "account": "ICS"})
         return out
 
-    @Property("QVariantList", notify=icsChanged)
+    @Property("QVariantList", notify=eventsChanged)
     def events(self):
         out = []
         for it in self._data["items"]:
@@ -364,7 +374,7 @@ class LocalStore(QObject):
         if not src or not os.path.isfile(src):
             return ""
         base = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-        d = os.path.join(base, "velora", "event-images")
+        d = os.path.join(base, "disponera", "event-images")
         os.makedirs(d, exist_ok=True)
         ext = os.path.splitext(src)[1] or ".img"
         dst = os.path.join(d, uuid.uuid4().hex[:12] + ext)
@@ -408,7 +418,7 @@ class LocalStore(QObject):
         subs = list(self._data["ics"])
         if not subs:
             self._ics_events = []
-            self.icsChanged.emit()
+            self.eventsChanged.emit()
             return
         threading.Thread(target=self._fetch_ics, args=(subs,), daemon=True).start()
 
@@ -417,11 +427,11 @@ class LocalStore(QObject):
         ctx = ssl.create_default_context()
         for s in subs:
             try:
-                req = urllib.request.Request(s["url"], headers={"User-Agent": "velora-ics/1.0"})
+                req = urllib.request.Request(s["url"], headers={"User-Agent": "disponera-ics/1.0"})
                 with urllib.request.urlopen(req, timeout=12, context=ctx) as r:
                     text = r.read().decode("utf-8", "replace")
                 collected.extend(_parse_ics(text, f"ics:{s['id']}"))
             except Exception:                                       # noqa: BLE001
                 continue
         self._ics_events = collected
-        self.icsChanged.emit()
+        self.eventsChanged.emit()

@@ -122,7 +122,7 @@ Item {
         target: Todo
         function onRecurringCompleted(title, dueMs) {
             board.toastText = "✓ " + title + "  ·  next: "
-                + Qt.formatDateTime(new Date(dueMs), "ddd, MMM d · hh:mm")
+                + Qt.formatDateTime(new Date(dueMs), Settings.dateTimeFmt)
             toastTimer.restart()
         }
     }

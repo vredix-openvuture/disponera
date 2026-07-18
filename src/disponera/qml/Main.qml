@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// velora — focused working over the same data the shell's quick-view flyout
+// Disponera — focused working over the same data the shell's quick-view flyout
 // shows: the unified todo model (Vikunja project tree + CalDAV lists), CalDAV
 // events, and local markdown notes. Colors + font follow the live velumeron
 // theme (ThemeBridge watches wallust's colors.json).
@@ -10,7 +10,7 @@ ApplicationWindow {
     id: win
     visible: true
     width: 1280; height: 800
-    title: "velora"
+    title: "Disponera"
     // Opaque, matching velumeron's own panels exactly: quickshell/Style.qml's
     // panelColor() returns a fully opaque Colors.bgPrimary (raw color0) for
     // every ui_style — an earlier version of this window made itself
@@ -19,7 +19,9 @@ ApplicationWindow {
     // setting, not how the shell's panels render).
     color: Theme.windowBg
 
-    property int tab: 0   // land on Calendar
+    // Initial tab follows the General setting (0=Calendar, 1=Todos); the binding
+    // breaks on the first manual tab switch, so it only decides the landing tab.
+    property int tab: Settings.startupTab
     // Immersive mode: the sidebar toggle hides BOTH the calendar sidebar and this
     // top bar. The top bar isn't gone — it peeks back when the cursor touches the
     // top edge (hover-to-show).
@@ -97,7 +99,7 @@ ApplicationWindow {
                 text: Todo.lastError !== "" ? "󰀦 " + Todo.lastError
                     : Todo.syncing || CalDav.syncing ? "syncing…"
                     : Todo.syncedAt > 0
-                      ? "synced " + Qt.formatTime(new Date(Todo.syncedAt), "hh:mm") : ""
+                      ? "synced " + Qt.formatTime(new Date(Todo.syncedAt), Settings.timeFmt) : ""
                 color: Todo.lastError !== "" ? Theme.fgUrgent : Theme.fgMuted
                 font.pixelSize: 12; font.family: Theme.fontFamily
             }

@@ -1,4 +1,4 @@
-# velora
+# Disponera
 
 Calendar + Todo + Quick-Notes in einer App — CalDAV-backed, Markdown-first,
 Obsidian-style Verlinkung. Eigenständiges Projekt, wird mit
@@ -16,8 +16,8 @@ Drei Panes, eine Datenbasis:
   Events/Todos referenzieren (Obsidian-style Graph kommt später).
 
 Das CalDAV-Fundament ist velumerons `caldav-client.py` (stdlib-only, ein
-JSON-Cache-Kontrakt für load/sync/Mutationen) — velora spricht denselben
-Kontrakt über `velora.caldav` und bleibt damit account-kompatibel zur
+JSON-Cache-Kontrakt für load/sync/Mutationen) — Disponera spricht denselben
+Kontrakt über `disponera.caldav` und bleibt damit account-kompatibel zur
 Shell (gleiche `caldav-accounts.json`).
 
 ## Status
@@ -25,10 +25,10 @@ Shell (gleiche `caldav-accounts.json`).
 **Skeleton.** Fenster startet, Panes sind Platzhalter, Backend-Wrapper stehen.
 
 ```
-src/velora/
+src/disponera/
   app.py      QML-Loader (PySide6)
   caldav.py   Wrapper um velumerons caldav-client.py (JSON-Kontrakt)
-  notes.py    Markdown-Store (XDG_DATA/velora/notes)
+  notes.py    Markdown-Store (XDG_DATA/disponera/notes)
 qml/
   Main.qml    3-Pane-Gerüst (Calendar / Todos / Notes)
 ```
@@ -38,7 +38,7 @@ qml/
 ```bash
 python -m venv .venv && . .venv/bin/activate.fish
 pip install -e .
-velora
+disponera
 ```
 
 Benötigt PySide6; CalDAV-Accounts werden (noch) in velumeron gepflegt

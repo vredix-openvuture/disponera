@@ -24,8 +24,23 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtQml import QJSValue
 
 from .runner import ScriptQueue
+
+
+def _py(v):
+    """Unwrap a value coming from QML into a plain Python object.
+
+    An object/array *created in QML* (e.g. a `{ … }` patch literal or the result
+    of `.map()`) reaches a `QVariant` slot as a `QJSValue` under PySide6 6.11 —
+    NOT an auto-converted dict/list. Calling `dict()` on it (or iterating it)
+    then raises `TypeError: QJSValue is not iterable`, which propagates back as a
+    JS exception and aborts the calling QML function mid-way (so e.g. the task
+    editor's Save never reaches `dlg.open = false` and appears to do nothing).
+    Values that originate in Python (round-tripped QVariantMaps) pass through
+    unchanged."""
+    return v.toVariant() if isinstance(v, QJSValue) else v
 
 
 def _scripts_dir() -> Path:
@@ -429,7 +444,7 @@ class TodoBridge(QObject):
         if not project_id.startswith("vk:"):
             return
         nid = int(project_id[3:])
-        p = dict(patch or {})
+        p = dict(_py(patch) or {})
         if "parentId" in p:                 # QML sends "vk:8" or "" — CLI wants an int
             pv = str(p["parentId"] or "")
             p["parentId"] = pv[3:] if pv.startswith("vk:") else (pv or "0")
@@ -456,10 +471,10 @@ class TodoBridge(QObject):
 
     @Slot("QVariant", "QVariant")
     def updateTask(self, task, patch) -> None:
-        tid = str(dict(task or {}).get("id") or "")
+        tid = str(dict(_py(task) or {}).get("id") or "")
         if tid.startswith("vk:"):
             nid = int(tid[3:])
-            p = dict(patch or {})
+            p = dict(_py(patch) or {})
             for t in self._vk.get("tasks", []):    # optimistic patch
                 if t.get("id") == nid:
                     if "title" in p: t["title"] = p["title"]
@@ -469,7 +484,7 @@ class TodoBridge(QObject):
             self._touch()
             self._vk_run("update-task", tid[3:], json.dumps(p))
         elif tid.startswith("loc:") and self._local is not None:
-            p = dict(patch or {})
+            p = dict(_py(patch) or {})
             lp = {}
             if "title" in p: lp["title"] = p["title"]
             if "notes" in p: lp["notes"] = p["notes"]
@@ -479,7 +494,7 @@ class TodoBridge(QObject):
 
     @Slot("QVariant", str)
     def moveTask(self, task, new_project_id: str) -> None:
-        tid = str(dict(task or {}).get("id") or "")
+        tid = str(dict(_py(task) or {}).get("id") or "")
         if tid.startswith("vk:") and new_project_id.startswith("vk:"):
             nid, npid = int(tid[3:]), int(new_project_id[3:])
             for t in self._vk.get("tasks", []):    # optimistic patch
@@ -490,9 +505,9 @@ class TodoBridge(QObject):
 
     @Slot("QVariant", "QVariant")
     def setLabels(self, task, label_ids) -> None:
-        tid = str(dict(task or {}).get("id") or "")
+        tid = str(dict(_py(task) or {}).get("id") or "")
         if tid.startswith("vk:"):
-            ids = [int(x) for x in (label_ids or [])]
+            ids = [int(x) for x in (_py(label_ids) or [])]
             self._vk_run("set-labels", tid[3:], json.dumps(ids))
 
     @Slot(str, str)

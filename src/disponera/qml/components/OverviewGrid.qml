@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 
-// Project card grid (velora M2 #181/#182/#185). Lists the child projects of
+// Project card grid (Disponera M2 #181/#182/#185). Lists the child projects of
 // `parentId` ("" = root) as cards — Vikunja background image (bgPath, cached
 // JPEG) with a legibility scrim, or a tint of the project colour when there's no
 // image. Each card shows the project title, a rolled-up open-task count (own +

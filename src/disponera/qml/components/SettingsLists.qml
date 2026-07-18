@@ -24,6 +24,7 @@ Flickable {
         width: parent.width
         spacing: 16
 
+        SectionLabel { text: "LOCAL LISTS" }
         Text {
             width: parent.width; wrapMode: Text.WordWrap
             text: "Local lists live only on this machine — no server needed. Add items from the Todos and Calendar tabs (the + offers your local lists as targets)."

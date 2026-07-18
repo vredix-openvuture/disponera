@@ -1,7 +1,7 @@
 """Bridge to velumeron's caldav-client.py (RFC 4791, stdlib-only).
 
 The shell script owns the JSON-cache contract: every command prints the full
-cache on stdout. velora reuses the script (and thereby the accounts in
+cache on stdout. Disponera reuses the script (and thereby the accounts in
 $VELUMERON_USER_DIR/gui/caldav-accounts.json) instead of reimplementing CalDAV —
 the shell's calendar menu and this app stay in sync by construction. Commands
 run through the serialized ScriptQueue (never blocking the GUI thread, never

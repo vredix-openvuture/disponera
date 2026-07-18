@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=velora
+Name=Disponera
 GenericName=Calendar & Tasks
 Comment=Calendar + Todo + Quick-Notes — Vikunja/CalDAV-backed, follows the velumeron theme
-Exec=velora
+Exec=disponera
 Icon=x-office-calendar
 Terminal=false
 Categories=Office;Calendar;ProjectManagement;
-StartupWMClass=velora
+StartupWMClass=disponera
