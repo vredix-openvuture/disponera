@@ -1,3 +1,6 @@
+<br>
+<br>
+
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/banner-white.svg">
@@ -6,6 +9,9 @@
   </picture>
 </div>
 
+<br>
+<br>
+<br>
 <br>
 
 Calendar + Todo + Quick-Notes in einer App — CalDAV-backed, Markdown-first,
