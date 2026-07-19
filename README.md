@@ -6,6 +6,8 @@
   </picture>
 </div>
 
+<br>
+
 Calendar + Todo + Quick-Notes in einer App — CalDAV-backed, Markdown-first,
 Obsidian-style Verlinkung. Eigenständiges Projekt, wird mit
 [velumeron](https://github.com/vredix-openvuture/velumeron) ausgeliefert.
