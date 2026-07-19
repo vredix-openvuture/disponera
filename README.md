@@ -1,4 +1,10 @@
-# Disponera
+<div align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-white.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-black.svg">
+    <img alt="Disponera" src="assets/banner-black.svg" width="540">
+  </picture>
+</div>
 
 Calendar + Todo + Quick-Notes in einer App — CalDAV-backed, Markdown-first,
 Obsidian-style Verlinkung. Eigenständiges Projekt, wird mit

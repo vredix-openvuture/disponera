@@ -4,7 +4,7 @@ import importlib.resources
 import os
 import sys
 
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtQml import QQmlApplicationEngine, qmlRegisterType
 
 from .caldav import CalDavBridge
@@ -23,6 +23,10 @@ def main() -> int:
     app.setApplicationDisplayName("Disponera")
     # Wayland app_id — hypr window rules and the .desktop StartupWMClass match on this.
     app.setDesktopFileName("disponera")
+    # Launcher/taskbar icon. On Wayland the compositor resolves the icon from the
+    # matching .desktop (Icon=disponera → hicolor/scalable/apps/disponera.svg);
+    # this sets it explicitly too for X11 and other environments.
+    app.setWindowIcon(QIcon.fromTheme("disponera"))
 
     # Live-markdown TextEdit highlighter — used by MarkdownField.qml.
     qmlRegisterType(MarkdownHighlighter, "Disponera", 1, 0, "MarkdownHighlighter")
